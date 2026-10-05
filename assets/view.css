@@ -22,7 +22,19 @@
 }
 
 .mlcn-presets,
-.mlcn-exclusions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.mlcn-exclusions,
+.mlcn-directions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+.mlcn-dir-toggle {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--button-radius);
+  padding: 0.3rem 0.65rem;
+  background: var(--interactive-normal);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.mlcn-dir-toggle:hover { background: var(--interactive-hover); color: var(--text-normal); }
 
 .mlcn-preset {
   border: 1px solid var(--background-modifier-border);

@@ -1,13 +1,13 @@
-// Навигатор вопросов ML Clan — standalone-порт Obsidian view.js.
-// Отличия от оригинала: данные грузятся через fetch, root монтируется в
-// #navigator-root; остальная логика (фильтры, пресеты, ранжирование) без изменений.
+// Навигатор вопросов ML Clan — standalone (данные через fetch, монтаж в
+// #navigator-root). По умолчанию показывает ВСЁ: без пресетов, все направления
+// выбраны. Фильтры: сектор, компания, отдел, тема, направления, поиск,
+// сортировка, минимум интервью, этап, показывать.
 (async function () {
   "use strict";
 
   const DATA_PATH = "assets/navigator-data.json";
-  const STORAGE_KEY = "ml-clan-navigator-state-v1";
-  const CLASSIC_EXCLUSIONS = ["llm", "nlp", "cv", "recsys", "ranking", "search", "deep_learning"];
-  const EXCLUDABLE = ["llm", "nlp", "cv", "recsys", "ranking", "search", "deep_learning"];
+  const STORAGE_KEY = "ml-clan-navigator-state-v2";
+  const ALL_DIRECTIONS = ["llm", "nlp", "cv", "recsys", "ranking", "search", "deep_learning"];
 
   const mount = document.getElementById("navigator-root");
   if (!mount) return;
@@ -34,23 +34,23 @@
   mount.appendChild(root);
 
   const interviewById = new Map(data.interviews.map((item) => [Number(item.id), item]));
-  const sectorLabel = new Map(data.catalog.sectors.map((item) => [item.id, item.label]));
   const domainLabel = new Map(data.catalog.domains.map((item) => [item.id, item.label]));
   const poolLabel = new Map(data.catalog.pools.map((item) => [item.id, item.label]));
 
   const defaultState = {
     sector: "", company: "", department: "", stage: "", pool: "",
-    query: "", excluded: CLASSIC_EXCLUSIONS, minInterviews: 1,
+    query: "", directions: ALL_DIRECTIONS.slice(), minInterviews: 1,
     sort: "coverage", limit: 100
   };
 
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (_) { stored = {}; }
   const state = { ...defaultState, ...stored };
-  state.excluded = new Set(Array.isArray(state.excluded) ? state.excluded : CLASSIC_EXCLUSIONS);
+  // directions — множество ВЫБРАННЫХ (показываемых) направлений; по умолчанию все
+  state.directions = new Set(Array.isArray(state.directions) ? state.directions : ALL_DIRECTIONS);
 
   function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, excluded: [...state.excluded] }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, directions: [...state.directions] }));
   }
 
   function element(tag, options = {}, children = []) {
@@ -63,8 +63,6 @@
     if (options.min !== undefined) node.min = String(options.min);
     if (options.max !== undefined) node.max = String(options.max);
     if (options.checked !== undefined) node.checked = Boolean(options.checked);
-    if (options.disabled !== undefined) node.disabled = Boolean(options.disabled);
-    if (options.ariaLabel) node.setAttribute("aria-label", options.ariaLabel);
     const list = Array.isArray(children) ? children : [children];
     for (const child of list) {
       if (child === null || child === undefined) continue;
@@ -91,12 +89,11 @@
 
   function createSelect() { return element("select", { cls: "dropdown mlcn-select" }); }
 
-  const presetBar = element("div", { cls: "mlcn-presets" });
   const controls = element("div", { cls: "mlcn-controls" });
-  const exclusions = element("div", { cls: "mlcn-exclusions" });
+  const directions = element("div", { cls: "mlcn-directions" });
   const summary = element("div", { cls: "mlcn-summary" });
   const results = element("div", { cls: "mlcn-results" });
-  root.append(presetBar, controls, exclusions, summary, results);
+  root.append(controls, directions, summary, results);
 
   const sectorSelect = createSelect();
   const companySelect = createSelect();
@@ -112,11 +109,11 @@
     labeledControl("Сектор", sectorSelect),
     labeledControl("Компания", companySelect),
     labeledControl("Отдел / команда", departmentSelect),
-    labeledControl("Этап", stageSelect),
     labeledControl("Тема", poolSelect),
     labeledControl("Поиск по вопросу", queryInput),
-    labeledControl("Минимум интервью", minInterviewsInput),
     labeledControl("Сортировка", sortSelect),
+    labeledControl("Минимум интервью", minInterviewsInput),
+    labeledControl("Этап", stageSelect),
     labeledControl("Показывать", limitSelect)
   );
 
@@ -135,37 +132,31 @@
     { value: "0", label: "Все вопросы" }
   ], String(state.limit), "100 вопросов");
 
-  exclusions.append(element("span", { cls: "mlcn-label", text: "Исключить направления" }));
-  const exclusionChecks = new Map();
-  for (const domain of EXCLUDABLE) {
-    const id = `mlcn-exclude-${domain}`;
-    const checkbox = element("input", { type: "checkbox", checked: state.excluded.has(domain) });
+  // Направления — что показывать (по умолчанию все выбраны)
+  directions.append(element("span", { cls: "mlcn-label", text: "Направления (показывать):" }));
+  const directionChecks = new Map();
+  for (const domain of ALL_DIRECTIONS) {
+    const id = `mlcn-dir-${domain}`;
+    const checkbox = element("input", { type: "checkbox", checked: state.directions.has(domain) });
     checkbox.id = id;
     const label = element("label", { cls: "mlcn-check" }, [checkbox, domainLabel.get(domain) || domain]);
     label.htmlFor = id;
-    exclusions.append(label);
-    exclusionChecks.set(domain, checkbox);
+    directions.append(label);
+    directionChecks.set(domain, checkbox);
     checkbox.addEventListener("change", () => {
-      checkbox.checked ? state.excluded.add(domain) : state.excluded.delete(domain);
-      saveState(); renderResults(); updatePresetButtons();
+      checkbox.checked ? state.directions.add(domain) : state.directions.delete(domain);
+      saveState(); renderResults();
     });
   }
-
-  const presets = [
-    { id: "livecoding", label: "Лайвкодинг", state: { sector: "", company: "", pool: "16", excluded: [] } },
-    { id: "classic", label: "Classic ML", state: { sector: "", company: "", pool: "", excluded: CLASSIC_EXCLUSIONS } },
-    { id: "banks", label: "Все банки", state: { sector: "banking_fintech", company: "", pool: "", excluded: [] } },
-    { id: "banks_classic", label: "Банки без LLM/NLP/CV/RecSys", state: { sector: "banking_fintech", company: "", pool: "", excluded: CLASSIC_EXCLUSIONS } },
-    { id: "sber", label: "Только Сбер", state: { sector: "banking_fintech", company: "sber", pool: "", excluded: [] } },
-    { id: "all", label: "Всё", state: { sector: "", company: "", pool: "", excluded: [] } }
-  ];
-  const presetButtons = new Map();
-  for (const preset of presets) {
-    const button = element("button", { cls: "mlcn-preset", type: "button", text: preset.label });
-    button.addEventListener("click", () => applyPreset(preset));
-    presetBar.append(button);
-    presetButtons.set(preset.id, button);
-  }
+  const dirToggle = element("button", { cls: "mlcn-dir-toggle", type: "button", text: "Сбросить" });
+  directions.append(dirToggle);
+  dirToggle.addEventListener("click", () => {
+    const allOn = state.directions.size === ALL_DIRECTIONS.length;
+    state.directions = new Set(allOn ? [] : ALL_DIRECTIONS);
+    for (const [d, cb] of directionChecks) cb.checked = state.directions.has(d);
+    dirToggle.textContent = allOn ? "Выбрать все" : "Сбросить";
+    saveState(); renderResults();
+  });
 
   function interviewsForMetadata() {
     return data.interviews.filter((interview) => {
@@ -191,37 +182,6 @@
       .sort((a, b) => a.localeCompare(b, "ru")).map((value) => ({ value, label: value }));
     state.department = replaceOptions(departmentSelect, departments, state.department, "Любой / не указан");
     state.stage = replaceOptions(stageSelect, stages, state.stage, "Любой / не указан");
-  }
-
-  function applyPreset(preset) {
-    state.sector = preset.state.sector;
-    state.company = preset.state.company;
-    state.pool = preset.state.pool;
-    state.department = "";
-    state.stage = "";
-    state.excluded = new Set(preset.state.excluded);
-    sectorSelect.value = state.sector;
-    refreshDependentOptions();
-    companySelect.value = state.company;
-    poolSelect.value = state.pool;
-    for (const [domain, checkbox] of exclusionChecks) checkbox.checked = state.excluded.has(domain);
-    saveState(); renderResults(); updatePresetButtons();
-  }
-
-  function activePresetId() {
-    return presets.find((preset) => {
-      const sameExcluded = preset.state.excluded.length === state.excluded.size
-        && preset.state.excluded.every((domain) => state.excluded.has(domain));
-      return preset.state.sector === state.sector
-        && preset.state.company === state.company
-        && preset.state.pool === state.pool
-        && sameExcluded;
-    })?.id;
-  }
-
-  function updatePresetButtons() {
-    const active = activePresetId();
-    for (const [id, button] of presetButtons) button.classList.toggle("is-active", id === active);
   }
 
   function filteredInterviews() {
@@ -260,11 +220,15 @@
     const allowedInterviews = filteredInterviews();
     const allowedIds = new Set(allowedInterviews.map((item) => Number(item.id)));
     const query = state.query.trim().toLocaleLowerCase("ru");
+    const allDirsOn = state.directions.size === ALL_DIRECTIONS.length;
     const ranked = [];
 
     for (const question of data.questions) {
       if (state.pool && !question.pool_ids.includes(state.pool)) continue;
-      if (question.domains.some((domain) => state.excluded.has(domain))) continue;
+      // направления: показываем вопрос без тематики всегда, тематический —
+      // если хотя бы одно его направление выбрано
+      if (!allDirsOn && question.domains.length
+          && !question.domains.some((d) => state.directions.has(d))) continue;
       if (query && !question.text.toLocaleLowerCase("ru").includes(query)) continue;
 
       const evidenceByInterview = new Map();
@@ -296,12 +260,10 @@
     const sorted = [...item.matchedInterviews].sort((a, b) =>
       (b.date || "").localeCompare(a.date || "") || a.company.localeCompare(b.company, "ru"));
     for (const interview of sorted) {
-      const sourceIds = item.evidenceByInterview.get(Number(interview.id)) || [];
       const parts = [interview.company];
       if (interview.date) parts.push(interview.date);
       if (interview.department) parts.push(interview.department);
       if (interview.stage) parts.push(interview.stage);
-      parts.push(sourceIds.map((id) => `#${id}`).join(", "));
       list.append(element("li", { text: parts.join(" · ") }));
     }
     details.append(list);
@@ -325,7 +287,7 @@
 
     results.replaceChildren();
     if (!visible.length) {
-      results.append(element("p", { cls: "mlcn-empty", text: "В этом срезе ничего не найдено. Уберите часть исключений или ослабьте фильтры." }));
+      results.append(element("p", { cls: "mlcn-empty", text: "В этом срезе ничего не найдено. Ослабь фильтры или верни направления." }));
       return;
     }
 
@@ -341,7 +303,7 @@
       );
       if (item.latest) meta.append(element("span", { text: `последний: ${item.latest}` }));
       const topics = item.question.pool_ids.map((id) => poolLabel.get(id) || id).join(" · ");
-      meta.append(element("span", { text: topics }));
+      if (topics) meta.append(element("span", { text: topics }));
       body.append(question, meta, renderSourceDetails(item));
       row.append(rank, body);
       results.append(row);
@@ -350,15 +312,15 @@
 
   sectorSelect.addEventListener("change", () => {
     state.sector = sectorSelect.value; state.company = ""; state.department = ""; state.stage = "";
-    refreshDependentOptions(); saveState(); renderResults(); updatePresetButtons();
+    refreshDependentOptions(); saveState(); renderResults();
   });
   companySelect.addEventListener("change", () => {
     state.company = companySelect.value; state.department = ""; state.stage = "";
-    refreshDependentOptions(); saveState(); renderResults(); updatePresetButtons();
+    refreshDependentOptions(); saveState(); renderResults();
   });
   departmentSelect.addEventListener("change", () => { state.department = departmentSelect.value; saveState(); renderResults(); });
   stageSelect.addEventListener("change", () => { state.stage = stageSelect.value; saveState(); renderResults(); });
-  poolSelect.addEventListener("change", () => { state.pool = poolSelect.value; saveState(); renderResults(); updatePresetButtons(); });
+  poolSelect.addEventListener("change", () => { state.pool = poolSelect.value; saveState(); renderResults(); });
   sortSelect.addEventListener("change", () => { state.sort = sortSelect.value; saveState(); renderResults(); });
   limitSelect.addEventListener("change", () => { state.limit = Number(limitSelect.value); saveState(); renderResults(); });
   minInterviewsInput.addEventListener("change", () => {
@@ -379,6 +341,6 @@
   poolSelect.value = state.pool;
   sortSelect.value = state.sort;
   limitSelect.value = String(state.limit);
-  updatePresetButtons();
+  dirToggle.textContent = state.directions.size === ALL_DIRECTIONS.length ? "Сбросить" : "Выбрать все";
   renderResults();
 })();

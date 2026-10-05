@@ -45,16 +45,17 @@ EXCLUDE_RELPATHS = {
     "ML Clan — навигатор/README",
 }
 
-# Папка волта -> (человеческое имя для сайдбара, порядок).
+# Папки волта -> (человеческое имя для сайдбара, порядок).
 FOLDER_META = {
-    "Пулы вопросов ML-клана":            ("📚 Пулы вопросов", 1),
+    "ML Clan — подготовка с контекстом": ("🏢 Разборы по компаниям", 1),
     "Лайвкодинг ML Clan":                ("💻 Разборы лайвкодинга", 2),
-    "ML Clan — подготовка с контекстом": ("🏢 Разборы по компаниям", 3),
-    "Материалы собесов":                 ("📄 Материалы", 4),
-    "":                                  ("📝 Шпаргалки и HR", 5),
+    "Пулы вопросов ML-клана":            ("📚 Пулы вопросов", 3),
 }
-# Папки, которые не показываем отдельной группой в сайдбаре
-# (навигатор доступен верхней ссылкой и является главной страницей).
+# Папки, которые публикуем как страницы (остальные — только как ресурс для
+# эмбедов/резолва, без отдельных страниц и без места в сайдбаре).
+# Навигатор публикуется (главная), но отдельной группой в сайдбаре не идёт —
+# он доступен верхней ссылкой.
+PUBLISH_FOLDERS = set(FOLDER_META) | {"ML Clan — навигатор"}
 HIDDEN_FOLDERS = {"ML Clan — навигатор"}
 
 CALLOUT_LABELS = {
@@ -444,16 +445,21 @@ def page_html(title: str, sidebar: str, content: str, *, extra_head="", extra_bo
 
 
 def main():
-    notes = []
+    all_notes = []
     for p in sorted(VAULT.rglob("*.md")):
         if any(part.startswith(".") for part in p.relative_to(VAULT).parts):
             continue
         rel_noext = nfc(str(p.relative_to(VAULT).with_suffix("")))
         if rel_noext in EXCLUDE_RELPATHS:
             continue
-        notes.append(Note(p))
+        all_notes.append(Note(p))
 
-    resolve, get_note = build_resolver(notes)
+    # публикуем только нужные разделы; «Материалы»/корневые нужны лишь как
+    # ресурс для эмбедов (напр. tree-pool встраивается в пул «Деревья»).
+    notes = [n for n in all_notes if n.folder in PUBLISH_FOLDERS]
+
+    resolve, _ = build_resolver(notes)        # ссылки — только на опубликованные
+    _, get_note = build_resolver(all_notes)   # эмбеды — по всем заметкам
     home_note = next((n for n in notes if n.is_navigator), None)
 
     # чистим и готовим выход

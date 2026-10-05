@@ -37,21 +37,25 @@ Procfile / railway.json  конфиг деплоя Railway
 ```bash
 pip install -r requirements.txt
 python build.py          # собрать site/
-python server.py         # http://localhost:8000  (логин/пароль mlclan/mlclan)
+python server.py         # http://localhost:8000  (пароль по умолчанию mlclan, логин любой)
 ```
 
-Логин/пароль задаются переменными `SITE_USER` / `SITE_PASS`:
+Доступ закрыт HTTP Basic Auth. Проверяется только пароль `SITE_PASS` — логин
+можно вводить любой (общий пароль для всех). Если задать ещё и `SITE_USER`, то
+будет сверяться и логин:
 
 ```bash
-SITE_USER=vadim SITE_PASS=secret python server.py
+SITE_PASS=secret python server.py              # логин любой, пароль secret
+SITE_USER=vadim SITE_PASS=secret python server.py  # нужны и логин, и пароль
 ```
 
 ## Деплой на Railway
 
 1. Запушить репозиторий на GitHub (`origin/main`).
 2. В нужном Railway-проекте: **New → GitHub Repo → mlsobes**.
-3. В переменных сервиса задать `SITE_USER` и `SITE_PASS` (обязательно — иначе
-   дефолт `mlclan/mlclan`).
+3. В переменных сервиса задать `SITE_PASS` — общий пароль (иначе дефолт `mlclan`).
+   Логин спрашивается браузером, но не проверяется (вводить можно любой). Хочешь
+   закрыть ещё и по логину — задай `SITE_USER`.
 4. Railway сам поднимет домен; при каждом push в `main` будет пересобирать сайт.
 
 ## Обновление контента

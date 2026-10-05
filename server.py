@@ -18,7 +18,9 @@ from flask import Flask, Response, request, send_from_directory
 ROOT = Path(__file__).resolve().parent
 SITE = ROOT / "site"
 
-USER = os.environ.get("SITE_USER", "mlclan")
+# SITE_USER опционален: если пуст — логин не проверяется (общий пароль для всех,
+# логин можно вводить любой). SITE_PASS — единственное, что проверяется всегда.
+USER = os.environ.get("SITE_USER", "")
 PASSWORD = os.environ.get("SITE_PASS", "mlclan")
 
 app = Flask(__name__, static_folder=None)
@@ -26,8 +28,9 @@ app = Flask(__name__, static_folder=None)
 
 def _check(username: str, password: str) -> bool:
     # постоянное по времени сравнение, чтобы не течь по таймингам
-    return (hmac.compare_digest(username, USER)
-            and hmac.compare_digest(password, PASSWORD))
+    if USER and not hmac.compare_digest(username, USER):
+        return False
+    return hmac.compare_digest(password, PASSWORD)
 
 
 @app.before_request

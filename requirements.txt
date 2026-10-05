@@ -3,3 +3,5 @@ gunicorn==22.0.0
 Markdown==3.7
 Pygments==2.18.0
 PyYAML==6.0.2
+psycopg[binary]==3.2.3
+openai==1.54.4

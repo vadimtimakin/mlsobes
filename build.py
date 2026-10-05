@@ -387,7 +387,8 @@ def build_sidebar(notes, active_note) -> str:
 
     nav_active = " active" if active_note is not None and active_note.is_navigator else ""
     parts = ['<nav class="sidebar-nav">']
-    parts.append(f'<a class="nav-navigator{nav_active}" href="index.html">🔎 Навигатор вопросов</a>')
+    parts.append(f'<a class="nav-navigator{nav_active}" href="/">🔎 Навигатор вопросов</a>')
+    parts.append('<a class="nav-upload" href="/upload">➕ Загрузить собес</a>')
 
     for folder in sorted(folders, key=folder_sort_key):
         items = sorted(folders[folder], key=lambda x: natural_key(x.basename))
@@ -400,7 +401,7 @@ def build_sidebar(notes, active_note) -> str:
         for n in items:
             active = " class=\"active\"" if active_note is not None and n.slug == active_note.slug else ""
             parts.append(
-                f'<li><a{active} href="{n.out_name}">{html.escape(n.title)}</a></li>'
+                f'<li><a{active} href="/{n.out_name}">{html.escape(n.title)}</a></li>'
             )
         parts.append("</ul></details>")
     parts.append("</nav>")
@@ -416,13 +417,13 @@ def page_html(title: str, sidebar: str, content: str, *, extra_head="", extra_bo
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>{html.escape(title)} · {SITE_TITLE}</title>
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="/assets/style.css">
 {extra_head}
 </head>
 <body>
 <header class="topbar">
   <button id="menu-toggle" aria-label="Меню">☰</button>
-  <a class="brand" href="index.html">{SITE_TITLE}</a>
+  <a class="brand" href="/">{SITE_TITLE}</a>
   <div class="search-wrap">
     <input id="search" type="search" placeholder="Поиск по заметкам…" autocomplete="off">
     <div id="search-results"></div>
@@ -438,7 +439,7 @@ def page_html(title: str, sidebar: str, content: str, *, extra_head="", extra_bo
     </article>
   </main>
 </div>
-<script src="assets/app.js"></script>
+<script src="/assets/app.js"></script>
 {extra_body}
 </body>
 </html>
@@ -528,8 +529,8 @@ def main():
 
         extra_head = extra_body = ""
         if is_navigator:
-            extra_head = '<link rel="stylesheet" href="assets/view.css">'
-            extra_body = '<script src="assets/navigator.js"></script>'
+            extra_head = '<link rel="stylesheet" href="/assets/view.css">'
+            extra_body = '<script src="/assets/navigator.js"></script>'
 
         folder_label = FOLDER_META.get(n.folder, (n.folder or "Общее",))[0]
         out_html = page_html(n.title, sidebar, content,

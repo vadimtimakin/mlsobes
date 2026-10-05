@@ -16,6 +16,30 @@
     });
   }
 
+  // динамическая секция «Загруженные собесы» (из БД, без ребилда)
+  var navEl = sidebar && sidebar.querySelector(".sidebar-nav");
+  if (navEl) {
+    fetch("/api/uploads").then(function (r) { return r.json(); }).then(function (list) {
+      if (!list || !list.length) return;
+      var det = document.createElement("details");
+      det.className = "nav-group";
+      var sum = document.createElement("summary");
+      sum.textContent = "🆕 Загруженные собесы";
+      det.appendChild(sum);
+      var ul = document.createElement("ul");
+      list.forEach(function (u) {
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        a.href = "/u/" + u.id;
+        a.textContent = u.title;
+        li.appendChild(a);
+        ul.appendChild(li);
+      });
+      det.appendChild(ul);
+      navEl.appendChild(det);
+    }).catch(function () {});
+  }
+
   // активная заметка — проскроллить к ней в сайдбаре
   var activeLink = sidebar && sidebar.querySelector("a.active");
   if (activeLink) {
@@ -35,7 +59,7 @@
 
   function loadIndex() {
     if (loaded) return Promise.resolve();
-    return fetch("assets/search-index.json")
+    return fetch("/assets/search-index.json")
       .then(function (r) { return r.json(); })
       .then(function (data) { index = data; loaded = true; });
   }
@@ -90,7 +114,7 @@
     }
     results.forEach(function (n) {
       var a = document.createElement("a");
-      a.href = n.url;
+      a.href = "/" + n.url;
       a.innerHTML =
         '<div class="sr-title"></div>' +
         '<div class="sr-folder"></div>';

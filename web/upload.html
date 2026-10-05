@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Загрузить собес · ML Clan — Собесы</title>
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+  .up-wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px 80px; }
+  .up-field { display: grid; gap: 6px; margin: 16px 0; }
+  .up-field label { font-weight: 600; }
+  .up-field .hint { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+  .up-field input, .up-field select, .up-field textarea {
+    width: 100%; padding: 9px 12px; background: var(--bg-elev2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; outline: none; font: inherit;
+  }
+  .up-field input:focus, .up-field select:focus, .up-field textarea:focus { border-color: var(--accent); }
+  .up-field textarea { min-height: 140px; resize: vertical; }
+  .up-or { text-align: center; color: var(--text-dim); margin: 10px 0; }
+  .up-btn {
+    background: var(--accent); color: #0f1220; border: none; border-radius: 8px;
+    padding: 11px 20px; font-weight: 700; cursor: pointer; font-size: 15px;
+  }
+  .up-btn:disabled { opacity: .5; cursor: default; }
+  .up-status { margin-top: 18px; padding: 14px 16px; border-radius: 10px;
+    background: var(--bg-elev); border: 1px solid var(--border); display: none; }
+  .up-status.show { display: block; }
+  .up-status.err { border-color: #7a3b3b; }
+  .up-status.ok { border-color: #4a7a3b; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">ML Clan — Собесы</a>
+</header>
+<div class="up-wrap">
+  <h1>Загрузить собеседование</h1>
+  <p style="color:var(--text-dim)">Приложи запись (аудио/видео — её транскрибируем) или вставь
+  текст (транскрипт либо готовый список вопросов). Мы вытащим вопросы, разметим по темам и
+  добавим в базу и навигатор.</p>
+
+  <form id="up-form">
+    <div class="up-field">
+      <label>Компания <span class="hint">— начни вводить, подскажем существующие; новой — просто впиши</span></label>
+      <input id="company" name="company" list="companies" autocomplete="off" required
+             placeholder="Например: Сбер">
+      <datalist id="companies"></datalist>
+    </div>
+    <div class="cols">
+      <div class="up-field">
+        <label>Сектор</label>
+        <select id="sector" name="sector"></select>
+      </div>
+      <div class="up-field">
+        <label>Дата собеса</label>
+        <input id="date" name="date" type="date">
+      </div>
+    </div>
+    <div class="up-field">
+      <label>Отдел / команда <span class="hint">— опционально</span></label>
+      <input id="department" name="department" autocomplete="off" placeholder="Например: RecSys">
+    </div>
+    <div class="up-field">
+      <label>Комментарий <span class="hint">— опционально, попадёт в начало заметки</span></label>
+      <textarea id="comment" name="comment" placeholder="Контекст, впечатления, советы…"
+                style="min-height:70px"></textarea>
+    </div>
+
+    <div class="up-field">
+      <label>Файл собеса <span class="hint">— аудио или видео</span></label>
+      <input id="file" name="file" type="file" accept="audio/*,video/*">
+    </div>
+    <div class="up-or">— или —</div>
+    <div class="up-field">
+      <label>Текст <span class="hint">— транскрипт или готовый список вопросов</span></label>
+      <textarea id="text" name="text" placeholder="Вставь сюда транскрипт или список вопросов…"></textarea>
+    </div>
+
+    <button class="up-btn" id="submit" type="submit">Загрузить и обработать</button>
+  </form>
+
+  <div class="up-status" id="status"></div>
+</div>
+
+<script>
+const sectorsById = {};
+fetch("/api/catalog").then(r => r.json()).then(cat => {
+  const sel = document.getElementById("sector");
+  for (const s of cat.sectors) {
+    const o = document.createElement("option");
+    o.value = s.id; o.textContent = s.label; sel.appendChild(o);
+  }
+  const dl = document.getElementById("companies");
+  const companyToSector = {};
+  for (const c of cat.companies) {
+    const o = document.createElement("option");
+    o.value = c.name; dl.appendChild(o);
+    companyToSector[(c.name || "").toLowerCase()] = c.sector;
+  }
+  // автоподстановка сектора для известной компании
+  document.getElementById("company").addEventListener("input", (e) => {
+    const sec = companyToSector[e.target.value.toLowerCase().trim()];
+    if (sec) sel.value = sec;
+  });
+});
+
+const form = document.getElementById("up-form");
+const statusEl = document.getElementById("status");
+const btn = document.getElementById("submit");
+
+function setStatus(html, cls) {
+  statusEl.className = "up-status show" + (cls ? " " + cls : "");
+  statusEl.innerHTML = html;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = document.getElementById("file").files[0];
+  const text = document.getElementById("text").value.trim();
+  if (!file && !text) { setStatus("Приложи файл или вставь текст.", "err"); return; }
+  btn.disabled = true;
+  setStatus('<span class="spinner"></span> Отправляю…');
+  const fd = new FormData(form);
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const j = await r.json();
+    if (!r.ok) { setStatus("Ошибка: " + (j.error || r.status), "err"); btn.disabled = false; return; }
+    poll(j.job_id);
+  } catch (err) {
+    setStatus("Сбой сети: " + err.message, "err"); btn.disabled = false;
+  }
+});
+
+async function poll(jobId) {
+  try {
+    const r = await fetch("/api/job/" + jobId);
+    const j = await r.json();
+    if (j.status === "done") {
+      setStatus('✅ Готово! ' + (j.message || "") +
+        ' <a href="/u/' + j.upload_id + '">Открыть собес →</a>', "ok");
+      btn.disabled = false;
+      return;
+    }
+    if (j.status === "error") {
+      setStatus("❌ Ошибка обработки: " + (j.message || ""), "err");
+      btn.disabled = false;
+      return;
+    }
+    setStatus('<span class="spinner"></span> ' + (j.stage || "Обработка…") +
+      ' <span style="color:var(--text-dim)">(можно не закрывать вкладку)</span>');
+    setTimeout(() => poll(jobId), 2500);
+  } catch (err) {
+    setTimeout(() => poll(jobId), 4000);
+  }
+}
+</script>
+</body>
+</html>

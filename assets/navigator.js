@@ -5,7 +5,7 @@
 (async function () {
   "use strict";
 
-  const DATA_PATH = "assets/navigator-data.json";
+  const DATA_PATH = "/assets/navigator-data.json";
   const STORAGE_KEY = "ml-clan-navigator-state-v2";
   const ALL_DIRECTIONS = ["llm", "nlp", "cv", "recsys", "ranking", "search", "deep_learning"];
 

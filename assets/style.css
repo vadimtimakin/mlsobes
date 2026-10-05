@@ -80,12 +80,14 @@ a:hover { text-decoration: underline; }
 
 /* sidebar nav */
 .sidebar-nav a { color: var(--text-dim); }
-.nav-home, .nav-navigator {
+.nav-home, .nav-navigator, .nav-upload {
   display: block; padding: 8px 12px; margin: 2px 4px;
   border-radius: 8px; font-weight: 600; color: var(--text) !important;
 }
 .nav-home.active, .nav-navigator:hover, .nav-home:hover { background: var(--accent-soft); text-decoration: none; }
-.nav-navigator { color: var(--accent) !important; margin-bottom: 8px; }
+.nav-navigator { color: var(--accent) !important; }
+.nav-upload { color: var(--text) !important; margin-bottom: 8px; }
+.nav-upload:hover { background: var(--accent-soft); text-decoration: none; }
 
 .nav-group { margin: 6px 4px; }
 .nav-group > summary {

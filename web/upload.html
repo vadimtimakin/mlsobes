@@ -32,6 +32,9 @@
     border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
     vertical-align: middle; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .up-anon { background: var(--bg-elev); border: 1px solid var(--border);
+    border-left: 3px solid #35c9c9; border-radius: 10px; padding: 12px 14px;
+    font-size: 14px; color: var(--text-dim); }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
 </style>
@@ -45,6 +48,9 @@
   <p style="color:var(--text-dim)">Приложи запись (аудио/видео — её транскрибируем) или вставь
   текст (транскрипт либо готовый список вопросов). Мы вытащим вопросы, разметим по темам и
   добавим в базу и навигатор.</p>
+  <p class="up-anon">🔒 Запись анонимизируется: мы сохраняем только извлечённые вопросы, а имена,
+  контакты и любые детали, по которым можно опознать ученика, вырезаются при обработке.
+  Само аудио/видео и транскрипт не сохраняются.</p>
 
   <form id="up-form">
     <div class="up-field">

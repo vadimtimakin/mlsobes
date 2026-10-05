@@ -37,17 +37,25 @@ def nfc(s: str) -> str:
     в путях и в тексте wikilinks не совпадают при сравнении."""
     return unicodedata.normalize("NFC", s)
 
-# Папки в порядке вывода в сайдбаре (остальные — по алфавиту после них).
-FOLDER_ORDER = [
-    "",  # корневые заметки
-    "Пулы вопросов ML-клана",
-    "Лайвкодинг ML Clan",
-    "ML Clan — подготовка с контекстом",
-    "Материалы собесов",
-    "ML Clan — навигатор",
-]
+# Заметки, которые НЕ публикуем (Obsidian-служебное, онбординг, шаблоны).
+EXCLUDE_RELPATHS = {
+    "НАЧНИ ЗДЕСЬ",
+    "Лайвкодинг ML Clan/_шаблон",
+    "Лайвкодинг ML Clan/_статус_расшифровки",
+    "ML Clan — навигатор/README",
+}
 
-HOME_NOTE = "НАЧНИ ЗДЕСЬ"  # basename заметки, которая станет главной
+# Папка волта -> (человеческое имя для сайдбара, порядок).
+FOLDER_META = {
+    "Пулы вопросов ML-клана":            ("📚 Пулы вопросов", 1),
+    "Лайвкодинг ML Clan":                ("💻 Разборы лайвкодинга", 2),
+    "ML Clan — подготовка с контекстом": ("🏢 Разборы по компаниям", 3),
+    "Материалы собесов":                 ("📄 Материалы", 4),
+    "":                                  ("📝 Шпаргалки и HR", 5),
+}
+# Папки, которые не показываем отдельной группой в сайдбаре
+# (навигатор доступен верхней ссылкой и является главной страницей).
+HIDDEN_FOLDERS = {"ML Clan — навигатор"}
 
 CALLOUT_LABELS = {
     "question": "Вопрос",
@@ -125,7 +133,10 @@ def split_frontmatter(raw: str):
     return {}, raw
 
 
-# --- защита fenced code блоков во время препроцессинга ----------------------
+# --- защита кода (fenced + inline) во время препроцессинга ------------------
+PROTECT_RE = re.compile(r"```.*?```|`[^`]+?`", re.DOTALL)
+
+
 def protect_code(text: str):
     blocks = []
 
@@ -133,8 +144,17 @@ def protect_code(text: str):
         blocks.append(m.group(0))
         return f"\x00CODE{len(blocks) - 1}\x00"
 
-    text = re.sub(r"```.*?\n.*?```", repl, text, flags=re.DOTALL)
+    text = PROTECT_RE.sub(repl, text)
     return text, blocks
+
+
+def inline_obsidian(text: str) -> str:
+    """Obsidian-инлайн, который нельзя трогать внутри кода (его уже защитили):
+    ==хайлайт== -> <mark>, и чистка <br>-дыр тренажёра."""
+    text = re.sub(r"==([^=\n]+?)==", r"<mark>\1</mark>", text)
+    text = re.sub(r"~~([^~\n]+?)~~", r"<del>\1</del>", text)
+    text = re.sub(r"(?i)(?:<br\s*/?>\s*){1,}", "", text)
+    return text
 
 
 def restore_code(text: str, blocks):
@@ -161,6 +181,14 @@ def build_resolver(notes):
             asset_map[nfc(p.stem).lower()] = p.name
             asset_map[nfc(str(p.relative_to(VAULT).with_suffix(""))).lower()] = p.name
 
+    def get_note(target: str):
+        """Заметка по wiki-таргету (relpath или basename) либо None."""
+        tl = target.strip().lower()
+        if tl in by_rel:
+            return by_rel[tl]
+        cand = by_base.get(tl.split("/")[-1])
+        return cand[0] if cand else None
+
     def resolve(target: str):
         """-> (href, is_pdf) либо None если не резолвится."""
         t = target.strip()
@@ -178,13 +206,11 @@ def build_resolver(notes):
             return (by_rel[tl].out_name, False)
         # md по basename
         cand = by_base.get(base)
-        if cand and len(cand) == 1:
-            return (cand[0].out_name, False)
-        if cand:  # неоднозначно -> берём первый, лучше чем ничего
+        if cand:
             return (cand[0].out_name, False)
         return None
 
-    return resolve
+    return resolve, get_note
 
 
 def convert_wikilinks(text: str, resolve) -> str:
@@ -193,11 +219,53 @@ def convert_wikilinks(text: str, resolve) -> str:
         label = alias if alias else target.split("/")[-1]
         res = resolve(target)
         if res is None:
-            return m.group(0)  # не трогаем — это не ссылка (напр. [[4,3,2,1]])
+            # не резолвится: если был алиас/нормальный текст — показываем как
+            # обычный текст (без уродливых [[ ]]); «[[4,3,2,1]]» и т.п. тоже
+            # станут просто «4,3,2,1».
+            return html.escape(label)
         href, _is_pdf = res
         return f'<a href="{html.escape(href, quote=True)}">{html.escape(label)}</a>'
 
     return WIKILINK_RE.sub(repl, text)
+
+
+# --- эмбеды ![[...]] и чистка Obsidian-мусора -------------------------------
+EMBED_RE = re.compile(r"!\[\[([^\[\]|#]+?)(?:#[^\]]+?)?(?:\|[^\]]+?)?\]\]")
+TME_LINK_RE = re.compile(r"\[([^\]]*?)\]\(https?://t\.me/[^)]+\)")
+
+
+def expand_embeds(body: str, get_note) -> str:
+    """Разворачиваем Obsidian-транслюзии ![[Заметка]] в её содержимое (1 уровень)."""
+    def repl(m):
+        n = get_note(m.group(1))
+        return ("\n\n" + n.body + "\n\n") if n else ""
+    return EMBED_RE.sub(repl, body)
+
+
+def clean_body(body: str) -> str:
+    """Убираем всё, что имеет смысл только в Obsidian и шумит на сайте.
+    (==хайлайты== и <br> чистятся позже, после защиты кода — см. inline_obsidian)"""
+    # метка-заглушка ответа тренажёра («Твой ответ:», «Твой ответ / код:»)
+    body = re.sub(r"(?im)^\*\*Твой ответ[^\n*]*:\*\*\s*$", "", body)
+    # приватные телеграм-ссылки: [текст](t.me/...) -> текст, голые url -> «Telegram»
+    body = TME_LINK_RE.sub(lambda m: m.group(1), body)
+    body = re.sub(r"https?://t\.me/\S+", "Telegram", body)
+    # строки-метаданные с telegram-id (в т.ч. списки «#id, #id»)
+    body = re.sub(r"(?m)^\s*[-*]\s*(?:Interview|Source):\s*#\d+(?:\s*,\s*#\d+)*[*~=\s]*$",
+                  "", body)
+    body = re.sub(r"(?m)^Источник:\s*#\d+.*$", "", body)
+    # хвосты-ссылки на источники в конце строки: « — #id», « — #id, #id»,
+    # « — #id, † #id» (кинжал = приблизительное совпадение). Хвост может стоять
+    # перед закрывающей markdown-разметкой строки (== ** ~~).
+    body = re.sub(r"[ \t]*[—–-][\s#\d,†]*#\d+[\s#\d,†]*(?=[*~=]*\s*$)", "",
+                  body, flags=re.M)
+    # осиротевшая легенда про пометку «†» (сами пометки уже вырезаны)
+    body = re.sub(r"(?m)^.*†.*$", "", body)
+    # пустые code-блоки
+    body = re.sub(r"```[a-zA-Z0-9]*\s*\n\s*```", "", body)
+    # схлопнуть лишние пустые строки
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body.strip() + "\n"
 
 
 # --- callouts ---------------------------------------------------------------
@@ -261,9 +329,10 @@ def make_md():
 
 
 def render_markdown(body: str, resolve) -> str:
-    # 1) защищаем код
+    # 1) защищаем код (fenced + inline)
     body, code_blocks = protect_code(body)
-    # 2) wikilinks (вне кода)
+    # 2) инлайн-обсидиан (хайлайты, <br>) и wikilinks — вне кода
+    body = inline_obsidian(body)
     body = convert_wikilinks(body, resolve)
     # 3) возвращаем код
     body = restore_code(body, code_blocks)
@@ -272,6 +341,7 @@ def render_markdown(body: str, resolve) -> str:
 
     def sub_render(sub_text: str) -> str:
         sub_text, cb = protect_code(sub_text)
+        sub_text = inline_obsidian(sub_text)
         sub_text = convert_wikilinks(sub_text, resolve)
         sub_text = restore_code(sub_text, cb)
         sub_md = make_md()
@@ -287,6 +357,8 @@ def strip_to_text(body: str) -> str:
     t = re.sub(r"```.*?```", " ", body, flags=re.DOTALL)
     t = re.sub(r"`[^`]*`", " ", t)
     t = WIKILINK_RE.sub(lambda m: m.group(3) or m.group(1), t)
+    t = re.sub(r"(?i)<br\s*/?>", " ", t)
+    t = t.replace("==", "")
     t = re.sub(r"[#>*_\[\]\-]+", " ", t)
     t = re.sub(r"https?://\S+", " ", t)
     t = re.sub(r"\s+", " ", t)
@@ -295,10 +367,8 @@ def strip_to_text(body: str) -> str:
 
 # --- сборка сайдбара --------------------------------------------------------
 def folder_sort_key(folder: str):
-    try:
-        return (FOLDER_ORDER.index(folder), folder)
-    except ValueError:
-        return (len(FOLDER_ORDER), folder)
+    meta = FOLDER_META.get(folder)
+    return (meta[1] if meta else 99, folder)
 
 
 def natural_key(s: str):
@@ -306,26 +376,27 @@ def natural_key(s: str):
             for x in re.split(r"(\d+)", s)]
 
 
-def build_sidebar(notes, active_slug: str, home_note) -> str:
+def build_sidebar(notes, active_note) -> str:
     folders = {}
     for n in notes:
+        if n.is_navigator or n.folder in HIDDEN_FOLDERS:
+            continue
         folders.setdefault(n.folder, []).append(n)
 
+    nav_active = " active" if active_note is not None and active_note.is_navigator else ""
     parts = ['<nav class="sidebar-nav">']
-    parts.append(
-        f'<a class="nav-home{" active" if home_note and active_slug == home_note.slug else ""}" '
-        f'href="{home_note.out_name if home_note else "index.html"}">🏠 Главная</a>'
-    )
-    parts.append('<a class="nav-navigator" href="navigator.html">🔎 Навигатор вопросов</a>')
+    parts.append(f'<a class="nav-navigator{nav_active}" href="index.html">🔎 Навигатор вопросов</a>')
 
     for folder in sorted(folders, key=folder_sort_key):
         items = sorted(folders[folder], key=lambda x: natural_key(x.basename))
-        label = folder if folder else "Общее"
-        parts.append('<details class="nav-group" open>')
+        meta = FOLDER_META.get(folder)
+        label = meta[0] if meta else (folder or "Общее")
+        is_open = active_note is not None and active_note.folder == folder
+        parts.append(f'<details class="nav-group"{" open" if is_open else ""}>')
         parts.append(f"<summary>{html.escape(label)}</summary>")
         parts.append("<ul>")
         for n in items:
-            active = " class=\"active\"" if n.slug == active_slug else ""
+            active = " class=\"active\"" if active_note is not None and n.slug == active_note.slug else ""
             parts.append(
                 f'<li><a{active} href="{n.out_name}">{html.escape(n.title)}</a></li>'
             )
@@ -377,10 +448,13 @@ def main():
     for p in sorted(VAULT.rglob("*.md")):
         if any(part.startswith(".") for part in p.relative_to(VAULT).parts):
             continue
+        rel_noext = nfc(str(p.relative_to(VAULT).with_suffix("")))
+        if rel_noext in EXCLUDE_RELPATHS:
+            continue
         notes.append(Note(p))
 
-    resolve = build_resolver(notes)
-    home_note = next((n for n in notes if n.basename == HOME_NOTE), None)
+    resolve, get_note = build_resolver(notes)
+    home_note = next((n for n in notes if n.is_navigator), None)
 
     # чистим и готовим выход
     if OUT.exists():
@@ -411,15 +485,26 @@ def main():
     search_index = []
 
     for n in notes:
-        sidebar = build_sidebar(notes, n.slug, home_note)
+        sidebar = build_sidebar(notes, n)
 
-        # навигатор: заменяем dataviewjs на mount-точку
+        # разворачиваем эмбеды и чистим Obsidian-мусор
+        body = clean_body(expand_embeds(n.body, get_note))
+
         is_navigator = n.is_navigator
-        body = n.body
         if is_navigator:
-            body = re.sub(r"```dataviewjs.*?```",
-                          '<div id="navigator-root" class="navigator-root"></div>',
-                          body, flags=re.DOTALL)
+            # убираем внутреннюю заметку про Codex/дедупликацию
+            body = re.sub(r"(?m)^> \[!note\].*(?:\n> ?.*)*", "", body)
+            # дружелюбное интро сразу после заголовка
+            lead = ("Полный пул вопросов со всех собеседований ML Clan. "
+                    "Выбери компанию, сектор или тему (или ищи по тексту) — и получишь "
+                    "список самых частых вопросов для этого среза, отсортированный по охвату.")
+            body = re.sub(r"(^# .+\n)", r"\1\n" + lead + "\n", body, count=1)
+            # mount-точка виджета вместо dataviewjs
+            body = re.sub(
+                r"```dataviewjs.*?```",
+                '<div id="navigator-root" class="navigator-root"></div>',
+                body, flags=re.DOTALL)
+            body = clean_body(body)
 
         content = render_markdown(body, resolve)
 
@@ -428,6 +513,7 @@ def main():
             extra_head = '<link rel="stylesheet" href="assets/view.css">'
             extra_body = '<script src="assets/navigator.js"></script>'
 
+        folder_label = FOLDER_META.get(n.folder, (n.folder or "Общее",))[0]
         out_html = page_html(n.title, sidebar, content,
                              extra_head=extra_head, extra_body=extra_body)
         (OUT / n.out_name).write_text(out_html, encoding="utf-8")
@@ -435,11 +521,11 @@ def main():
         search_index.append({
             "title": n.title,
             "url": n.out_name,
-            "folder": n.folder or "Общее",
-            "text": strip_to_text(n.body)[:4000],
+            "folder": "Навигатор" if is_navigator else folder_label,
+            "text": strip_to_text(body)[:4000],
         })
 
-    # index.html -> копия главной заметки (или первой)
+    # index.html -> копия навигатора (главная страница)
     if home_note:
         shutil.copy(OUT / home_note.out_name, OUT / "index.html")
     elif notes:

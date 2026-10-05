@@ -164,6 +164,10 @@ details.callout[open] > summary::before { content: "▾ "; }
 .callout-warning .callout-title { color: #efc07a; }
 .callout-tip, .callout-example, .callout-abstract { border-left-color: #8ad17a; }
 
+/* Obsidian-хайлайт и зачёркивание */
+mark { background: #4a4320; color: #ffe9a6; padding: 0 3px; border-radius: 3px; }
+del { color: var(--text-dim); text-decoration-color: #7a3b3b; }
+
 /* navigator mount */
 .navigator-root { margin-top: 10px; }
 

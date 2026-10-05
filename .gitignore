@@ -1,0 +1,18 @@
+# сгенерированный сайт — собирается при деплое
+site/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Obsidian служебное
+Собесы/.obsidian/workspace*.json
+Собесы/.obsidian/cache/
+
+# архивы-дубликаты (пулы уже лежат распакованными)
+Собесы/Пулы вопросов ML-клана.zip

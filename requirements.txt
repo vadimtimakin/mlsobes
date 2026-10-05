@@ -1,0 +1,5 @@
+Flask==3.0.3
+gunicorn==22.0.0
+Markdown==3.7
+Pygments==2.18.0
+PyYAML==6.0.2

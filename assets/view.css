@@ -1,0 +1,98 @@
+/* Навигатор вопросов — standalone (вне Obsidian).
+   Мапим Obsidian-переменные темы на нашу тёмную палитру. */
+.ml-clan-nav {
+  --background-secondary: var(--bg-elev);
+  --background-modifier-border: var(--border);
+  --interactive-normal: var(--bg-elev2);
+  --interactive-hover: #2b3140;
+  --interactive-accent: var(--accent);
+  --text-normal: var(--text);
+  --text-muted: var(--text-dim);
+  --text-faint: #6b7384;
+  --text-accent: var(--accent);
+  --text-on-accent: #0f1220;
+  --radius-m: 10px;
+  --button-radius: 8px;
+  --font-ui-small: 13px;
+  --font-ui-smaller: 12px;
+  --font-semibold: 600;
+
+  display: grid;
+  gap: 1rem;
+}
+
+.mlcn-presets,
+.mlcn-exclusions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+.mlcn-preset {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--button-radius);
+  padding: 0.4rem 0.75rem;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 14px;
+}
+.mlcn-preset:hover { background: var(--interactive-hover); }
+.mlcn-preset.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.mlcn-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.mlcn-field { display: grid; gap: 0.3rem; min-width: 0; }
+.mlcn-label { font-size: var(--font-ui-small); color: var(--text-muted); }
+
+.mlcn-select, .mlcn-query, .mlcn-number {
+  width: 100%; min-width: 0;
+  padding: 7px 10px;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px; outline: none;
+  font-size: 14px;
+}
+.mlcn-select:focus, .mlcn-query:focus, .mlcn-number:focus { border-color: var(--interactive-accent); }
+
+.mlcn-check {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: var(--font-ui-small); cursor: pointer; color: var(--text-normal);
+}
+
+.mlcn-summary { color: var(--text-muted); }
+.mlcn-summary strong { color: var(--text-normal); }
+
+.mlcn-results { display: grid; }
+.mlcn-result {
+  display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.6rem;
+  padding: 0.9rem 0; border-bottom: 1px solid var(--background-modifier-border);
+}
+.mlcn-rank { color: var(--text-faint); font-variant-numeric: tabular-nums; text-align: right; }
+.mlcn-result-body { min-width: 0; }
+.mlcn-question { color: var(--text-normal); line-height: 1.45; }
+.mlcn-meta {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; margin-top: 0.35rem;
+  color: var(--text-muted); font-size: var(--font-ui-smaller);
+}
+.mlcn-count { color: var(--text-accent); font-weight: var(--font-semibold); }
+.mlcn-details { margin-top: 0.35rem; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.mlcn-details summary { cursor: pointer; }
+.mlcn-sources { margin: 0.4rem 0 0; padding-inline-start: 1.25rem; }
+.mlcn-sources li { margin: 0.2rem 0; }
+.mlcn-empty { padding: 1rem 0; color: var(--text-muted); }
+
+@media (max-width: 520px) {
+  .mlcn-controls { grid-template-columns: 1fr; }
+  .mlcn-result { grid-template-columns: 1.5rem minmax(0, 1fr); }
+}

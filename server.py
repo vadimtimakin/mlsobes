@@ -188,13 +188,21 @@ def api_upload():
         return jsonify({"error": "Приложите файл или вставьте текст"}), 400
 
     job_id = uuid.uuid4().hex
+    contributor = request.remote_addr or ""  # берём ДО потока: request жив только в запросе
     db.create_job(job_id)
 
     def run():
-        ingest.process(job_id, src_path=src_path, pasted_text=pasted, company=company,
-                       sector=sector, department=department, interview_date=date,
-                       comment=comment, contributor=(request.remote_addr or ""))
-        _invalidate()
+        try:
+            ingest.process(job_id, src_path=src_path, pasted_text=pasted, company=company,
+                           sector=sector, department=department, interview_date=date,
+                           comment=comment, contributor=contributor)
+        except Exception as e:  # noqa: BLE001 — иначе джоба молча зависнет в queued
+            try:
+                db.update_job(job_id, status="error", message=f"{type(e).__name__}: {e}")
+            except Exception:
+                pass
+        finally:
+            _invalidate()
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})

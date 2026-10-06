@@ -162,11 +162,13 @@ def match_company(name: str, sector: str):
 
 
 # --- генерация заметки -------------------------------------------------------
-def build_note_md(company_name, date, comment, questions) -> str:
+def build_note_md(company_name, date, comment, questions, community_link=None) -> str:
     cat = load_catalog()
     pool_label = {p["id"]: p["label"] for p in cat["pools"]}
     head = f"# {company_name}" + (f" — {date}" if date else "")
     lines = [head, ""]
+    if community_link and community_link.strip():
+        lines += [f"**Ссылка на собеседование в сообществе:** {community_link.strip()}", ""]
     if comment and comment.strip():
         lines += [comment.strip(), ""]
     lines.append("## Вопросы с собеседования")
@@ -191,7 +193,7 @@ def render_note_html(note_md: str) -> str:
 
 # --- оркестрация ------------------------------------------------------------
 def process(job_id: str, *, src_path, pasted_text, company, sector, department,
-            interview_date, comment, contributor):
+            interview_date, comment, community_link, contributor):
     """Фоновая обработка. src_path ИЛИ pasted_text. Пишет статус в jobs."""
     try:
         if pasted_text and pasted_text.strip():
@@ -209,14 +211,14 @@ def process(job_id: str, *, src_path, pasted_text, company, sector, department,
             return
 
         company_id, company_name, sector_final = match_company(company, sector)
-        note_md = build_note_md(company_name, interview_date, comment, questions)
+        note_md = build_note_md(company_name, interview_date, comment, questions, community_link)
 
         db.update_job(job_id, status="saving", stage="Сохраняю")
         upload_id = db.insert_upload(
             company_id=company_id, company_name=company_name, sector=sector_final,
             department=(department or None), interview_date=interview_date,
-            comment=comment, note_md=note_md, contributor=contributor,
-            questions=questions)
+            comment=comment, community_link=community_link, note_md=note_md,
+            contributor=contributor, questions=questions)
         db.update_job(job_id, status="done", stage="Готово",
                       message=f"Добавлено вопросов: {len(questions)}", upload_id=upload_id)
     except Exception as e:  # noqa: BLE001

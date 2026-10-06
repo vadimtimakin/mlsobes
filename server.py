@@ -171,6 +171,7 @@ def api_upload():
     department = (request.form.get("department") or "").strip()
     date = (request.form.get("date") or "").strip()
     comment = (request.form.get("comment") or "").strip()
+    community_link = (request.form.get("community_link") or "").strip()
     pasted = (request.form.get("text") or "").strip()
     if not company:
         return jsonify({"error": "Укажите компанию"}), 400
@@ -195,7 +196,8 @@ def api_upload():
         try:
             ingest.process(job_id, src_path=src_path, pasted_text=pasted, company=company,
                            sector=sector, department=department, interview_date=date,
-                           comment=comment, contributor=contributor)
+                           comment=comment, community_link=community_link,
+                           contributor=contributor)
         except Exception as e:  # noqa: BLE001 — иначе джоба молча зависнет в queued
             try:
                 db.update_job(job_id, status="error", message=f"{type(e).__name__}: {e}")

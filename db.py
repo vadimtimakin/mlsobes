@@ -64,17 +64,17 @@ def get_job(job_id: str):
 
 # --- загрузки ---------------------------------------------------------------
 def insert_upload(*, company_id, company_name, sector, department, interview_date,
-                  comment, note_md, contributor, questions) -> int:
+                  comment, community_link, note_md, contributor, questions) -> int:
     """questions: список dict {text, pool_ids, domains}. Возвращает id загрузки."""
     with _conn() as conn:
         with conn.transaction():
             cur = conn.execute(
                 """INSERT INTO uploads
                    (company_id, company_name, sector, department, interview_date,
-                    comment, note_md, contributor)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    comment, community_link, note_md, contributor)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (company_id, company_name, sector, department, interview_date or None,
-                 comment, note_md, contributor))
+                 comment, community_link or None, note_md, contributor))
             upload_id = cur.fetchone()["id"]
             for ord_, q in enumerate(questions):
                 conn.execute(

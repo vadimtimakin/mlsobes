@@ -9,11 +9,14 @@ CREATE TABLE IF NOT EXISTS uploads (
     department     TEXT,
     interview_date DATE,
     comment        TEXT,
+    community_link TEXT,
     note_md        TEXT NOT NULL,
     contributor    TEXT,
     status         TEXT NOT NULL DEFAULT 'live',  -- live | hidden
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- для БД, созданных до появления колонки
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS community_link TEXT;
 
 -- Вытащенные из собеса вопросы (для навигатора).
 CREATE TABLE IF NOT EXISTS upload_questions (

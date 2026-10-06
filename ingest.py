@@ -67,12 +67,12 @@ def _run(cmd):
 
 
 def media_to_audio_chunks(src: Path, workdir: Path):
-    """Извлекает моно-16k mp3 и режет на куски ~20 мин. Возвращает список путей."""
+    """Извлекает моно-16k mp3 и ВСЕГДА режет по времени на куски ~20 мин.
+    У gpt-4o-transcribe лимит и по размеру (25МБ), и по ДЛИТЕЛЬНОСТИ (~1400с) —
+    сегменты по 20 мин перекрывают оба. Короткое аудио даёт один сегмент."""
     mono = workdir / "audio.mp3"
     _run(["ffmpeg", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000",
           "-b:a", "32k", "-f", "mp3", str(mono)])
-    if mono.stat().st_size <= 24 * 1024 * 1024:
-        return [mono]
     _run(["ffmpeg", "-y", "-i", str(mono), "-f", "segment",
           "-segment_time", str(SEGMENT_SECONDS), "-c", "copy",
           str(workdir / "seg_%03d.mp3")])

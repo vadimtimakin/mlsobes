@@ -15,9 +15,11 @@
 import hmac
 import json
 import os
+import re
 import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 from flask import Flask, Response, request, send_from_directory, jsonify
@@ -37,6 +39,31 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # до 1 ГБ (видео)
 
+# --- антивыкачка ------------------------------------------------------------
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MIN", "120"))  # запросов/мин на IP
+RATE_WINDOW = 60
+_SCRAPER_UA = re.compile(
+    r"(?i)(curl|wget|python-requests|urllib|scrapy|httpx|aiohttp|go-http-client|"
+    r"java/|libwww|okhttp|node-fetch|axios|httrack|mechanize|phantomjs|"
+    r"headlesschrome|puppeteer|playwright|\bbot\b|spider|crawler|scrape)")
+# объёмные JSON отдают весь корпус за один запрос — только из нашего фронта
+BULK_JSON = {"/assets/navigator-data.json", "/assets/search-index.json"}
+_hits: dict[str, deque] = {}
+_hits_lock = threading.Lock()
+
+
+def _client_ip() -> str:
+    xff = request.headers.get("X-Forwarded-For", "")  # за прокси Railway
+    return xff.split(",")[0].strip() if xff else (request.remote_addr or "?")
+
+
+def _same_origin() -> bool:
+    sfs = request.headers.get("Sec-Fetch-Site")
+    if sfs is not None:  # современные браузеры всегда шлют
+        return sfs in ("same-origin", "same-site", "none")
+    ref = request.headers.get("Referer", "")
+    return bool(request.host) and request.host in ref
+
 _base_nav = None     # пребилд navigator-data
 _base_search = None  # пребилд search-index
 _cache = {"nav": (0.0, None), "search": (0.0, None)}  # TTL-кэш merged
@@ -48,6 +75,35 @@ def _check(username: str, password: str, required: str) -> bool:
     if USER and required == PASSWORD and not hmac.compare_digest(username, USER):
         return False
     return bool(required) and hmac.compare_digest(password, required)
+
+
+@app.before_request
+def anti_scrape():
+    """Защита от массовой выкачки: блок скрипт-UA, гейт объёмных JSON, rate-limit."""
+    if request.path == "/healthz":
+        return None
+    ua = request.headers.get("User-Agent", "")
+    if not ua or _SCRAPER_UA.search(ua):
+        return Response("Доступ запрещён", 403)
+    if request.path in BULK_JSON and not _same_origin():
+        return Response("Доступ запрещён", 403)
+    ip = _client_ip()
+    now = time.time()
+    with _hits_lock:
+        dq = _hits.get(ip)
+        if dq is None:
+            dq = _hits[ip] = deque()
+        while dq and now - dq[0] > RATE_WINDOW:
+            dq.popleft()
+        if len(dq) >= RATE_LIMIT:
+            retry = int(RATE_WINDOW - (now - dq[0])) + 1
+            return Response("Слишком много запросов, подождите",
+                            429, {"Retry-After": str(retry)})
+        dq.append(now)
+        if len(_hits) > 5000:  # лёгкая уборка памяти
+            for k in [k for k, v in _hits.items() if not v]:
+                _hits.pop(k, None)
+    return None
 
 
 @app.before_request

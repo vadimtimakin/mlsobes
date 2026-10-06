@@ -48,6 +48,17 @@ Procfile / railway.json / nixpacks.toml  конфиг деплоя Railway (+ ff
 | `OPENAI_API_KEY` | транскрибация + извлечение вопросов |
 | `OPENAI_MODEL` | модель извлечения, дефолт `gpt-4o` |
 | `ADMIN_PASS` | пароль на `/admin` (откат) |
+| `RATE_LIMIT_PER_MIN` | лимит запросов/мин на IP (антивыкачка), дефолт `120` |
+
+### Защита от выкачки материалов (`anti_scrape`)
+
+Сайт за общим паролем, поэтому поверх — быстрый барьер от массового скачивания:
+блок скрипт-/краулер-`User-Agent` (curl/wget/python/scrapy/headless и т.п.),
+rate-limit по IP (`RATE_LIMIT_PER_MIN`, по `X-Forwarded-For` за прокси Railway) и
+гейт объёмных JSON (`navigator-data.json`/`search-index.json` отдают весь корпус за
+запрос → только из нашего фронта, по `Sec-Fetch-Site`/`Referer`). Это не броня от
+headless-браузера, но отсекает ленивое скрейпинг-скриптами и тормозит быстрых ботов.
+Лимит — в памяти процесса (на воркер), для простоты.
 
 ## Что делает `build.py`
 

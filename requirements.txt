@@ -1,6 +1,7 @@
 Flask==3.0.3
 gunicorn==22.0.0
 Markdown==3.7
+nh3==0.2.18
 Pygments==2.18.0
 PyYAML==6.0.2
 psycopg[binary]==3.2.3

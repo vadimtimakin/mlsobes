@@ -34,7 +34,8 @@ def lookup_by_code(code: str):
                 "SELECT user_id, nick FROM access_codes WHERE code = %s", (code,)
             ).fetchone()
     except Exception as e:  # noqa: BLE001 — БД недоступна не должна ронять сайт
-        print("access.lookup_by_code failed:", e, flush=True)
+        # Без str(e): текст исключения psycopg может содержать строку подключения.
+        print("access.lookup_by_code failed:", type(e).__name__, flush=True)
         return None
 
 
@@ -49,5 +50,5 @@ def lookup_nick(user_id: int):
             ).fetchone()
             return row["nick"] if row else None
     except Exception as e:  # noqa: BLE001
-        print("access.lookup_nick failed:", e, flush=True)
+        print("access.lookup_nick failed:", type(e).__name__, flush=True)
         return None

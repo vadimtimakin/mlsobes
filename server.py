@@ -33,6 +33,7 @@ import db
 import ingest
 import navswap
 import watermark
+import nh3
 from build import make_md, page_html
 
 ROOT = Path(__file__).resolve().parent
@@ -40,7 +41,7 @@ SITE = ROOT / "site"
 UPLOAD_TMP = ROOT / "upload_tmp"
 
 USER = os.environ.get("SITE_USER", "")
-PASSWORD = os.environ.get("SITE_PASS", "mlclan")
+PASSWORD = os.environ.get("SITE_PASS", "")  # без дефолта: пусто + нет код-логина → 503 (fail-closed)
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
 # Секрет для подписи куки-сессии. Задаётся вместе с ACCESS_DB_URL при включении код-логина.
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
@@ -51,6 +52,7 @@ app.secret_key = SESSION_SECRET or "dev-insecure-" + uuid.uuid4().hex
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=180)  # «ввёл код один раз»
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True  # кука только по HTTPS (Railway терминирует TLS)
 
 
 def _code_login_enabled() -> bool:
@@ -151,7 +153,10 @@ def require_auth():
             return None
         return redirect("/login")
 
-    # Старый режим: общий пароль по Basic Auth.
+    # Старый режим: общий пароль по Basic Auth. Fail-closed: если ни код-логин, ни SITE_PASS
+    # не настроены — НЕ открываем сайт, отдаём 503 (защита от случайно снятого env).
+    if not PASSWORD:
+        return Response("Доступ не настроен (нет SESSION_SECRET/ACCESS_DB_URL или SITE_PASS)", 503)
     auth = request.authorization
     if auth and _check(auth.username or "", auth.password or "", PASSWORD):
         return None
@@ -391,7 +396,8 @@ def uploaded_note(upload_id):
     up = db.get_upload(upload_id)
     if not up or up["status"] != "live":
         return Response("Не найдено", 404)
-    content = make_md().convert(up["note_md"])
+    # note_md загружают ученики → санитайзим результат (Markdown пропускает сырой HTML/JS).
+    content = nh3.clean(make_md().convert(up["note_md"]))
     sidebar = _sidebar_from_site()
     html = page_html(_upload_title(up), sidebar, content)
     return Response(html, mimetype="text/html")

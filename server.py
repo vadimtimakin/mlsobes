@@ -180,7 +180,7 @@ a{{color:#60a5fa}}
 <h1>🔑 Вход по персональному коду</h1>
 <p>Для доступа к ресурсу укажи код доступа — его можно получить, нажав кнопку
 «Получить код доступа» в <a href="https://t.me/c/2251744485/50" target=_blank
-rel=noopener>боте</a>. Юзернейм вводить не надо.</p>
+rel=noopener>боте</a>.</p>
 {err}<input name=code placeholder="КОД" autofocus autocomplete=off maxlength=32>
 <button type=submit>Войти</button></form></body></html>"""
 

@@ -20,12 +20,18 @@ import threading
 import time
 import uuid
 from collections import deque
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, Response, request, send_from_directory, jsonify
+from flask import (
+    Flask, Response, request, send_from_directory, jsonify,
+    session, redirect,
+)
 
+import access
 import db
 import ingest
+import watermark
 from build import make_md, page_html
 
 ROOT = Path(__file__).resolve().parent
@@ -35,9 +41,20 @@ UPLOAD_TMP = ROOT / "upload_tmp"
 USER = os.environ.get("SITE_USER", "")
 PASSWORD = os.environ.get("SITE_PASS", "mlclan")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "")
+# Секрет для подписи куки-сессии. Задаётся вместе с ACCESS_DB_URL при включении код-логина.
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # до 1 ГБ (видео)
+app.secret_key = SESSION_SECRET or "dev-insecure-" + uuid.uuid4().hex
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=180)  # «ввёл код один раз»
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+
+def _code_login_enabled() -> bool:
+    """Код-логин включён, когда задана БД кодов И секрет сессии. Иначе — старый Basic Auth."""
+    return access.enabled() and bool(SESSION_SECRET)
 
 # --- антивыкачка ------------------------------------------------------------
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MIN", "120"))  # запросов/мин на IP
@@ -106,20 +123,103 @@ def anti_scrape():
     return None
 
 
+def _admin_auth_or_challenge():
+    """Админка — всегда по Basic Auth (ADMIN_PASS), независимо от код-логина."""
+    if not ADMIN_PASS:
+        return Response("Админка не настроена (нет ADMIN_PASS)", 503)
+    auth = request.authorization
+    if auth and _check(auth.username or "", auth.password or "", ADMIN_PASS):
+        return None
+    return Response("Требуется авторизация", 401,
+                    {"WWW-Authenticate": 'Basic realm="ML Clan Admin"'})
+
+
 @app.before_request
 def require_auth():
     if request.path == "/healthz":
         return None
     is_admin = request.path.startswith("/admin")
-    required = ADMIN_PASS if is_admin else PASSWORD
-    realm = "ML Clan Admin" if is_admin else "ML Clan Sobesy"
-    if is_admin and not ADMIN_PASS:
-        return Response("Админка не настроена (нет ADMIN_PASS)", 503)
+    if is_admin:
+        return _admin_auth_or_challenge()
+
+    # Новый режим: персональный код + сессия (когда задан ACCESS_DB_URL + SESSION_SECRET).
+    if _code_login_enabled():
+        if request.path in ("/login", "/logout"):
+            return None
+        if session.get("uid"):
+            return None
+        return redirect("/login")
+
+    # Старый режим: общий пароль по Basic Auth.
     auth = request.authorization
-    if auth and _check(auth.username or "", auth.password or "", required):
+    if auth and _check(auth.username or "", auth.password or "", PASSWORD):
         return None
     return Response("Требуется авторизация", 401,
-                    {"WWW-Authenticate": f'Basic realm="{realm}"'})
+                    {"WWW-Authenticate": 'Basic realm="ML Clan Sobesy"'})
+
+
+# --- код-логин (персональный код из бота) -----------------------------------
+_LOGIN_HTML = """<!doctype html><html lang=ru><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>ML Clan — Собесы</title>
+<style>
+body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1115;color:#e6e6e6;
+display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}}
+.card{{background:#191c22;padding:32px 28px;border-radius:14px;max-width:360px;width:90%;
+box-shadow:0 10px 40px rgba(0,0,0,.4)}}
+h1{{font-size:19px;margin:0 0 6px}} p{{color:#9aa0aa;font-size:14px;margin:0 0 18px;line-height:1.5}}
+input{{width:100%;box-sizing:border-box;padding:12px 14px;font-size:16px;letter-spacing:2px;
+text-align:center;text-transform:uppercase;background:#0f1115;border:1px solid #333;border-radius:9px;
+color:#fff;margin-bottom:12px}}
+button{{width:100%;padding:12px;font-size:15px;background:#3b82f6;color:#fff;border:0;border-radius:9px;
+cursor:pointer}} button:hover{{background:#2f6fe0}}
+.err{{color:#f87171;font-size:13px;margin-bottom:10px}}
+</style></head><body><form class=card method=post action=/login>
+<h1>🔑 Вход по персональному коду</h1>
+<p>Открой бота ML Clan → «Получить код доступа» и введи код сюда. Один раз — дальше
+браузер запомнит.</p>
+{err}<input name=code placeholder="КОД" autofocus autocomplete=off maxlength=32>
+<button type=submit>Войти</button></form></body></html>"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not _code_login_enabled():
+        return redirect("/")
+    if session.get("uid") and request.method == "GET":
+        return redirect("/")
+    err = ""
+    if request.method == "POST":
+        rec = access.lookup_by_code(request.form.get("code", ""))
+        if rec:
+            session.permanent = True
+            session["uid"] = int(rec["user_id"])
+            session["nick"] = rec.get("nick") or ""
+            return redirect("/")
+        err = '<div class=err>Код не найден. Проверь его в боте и попробуй ещё раз.</div>'
+    return Response(_LOGIN_HTML.format(err=err), mimetype="text/html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+# --- homoglyph-watermark: все text/html для залогиненного юзера --------------
+@app.after_request
+def _apply_watermark(resp: Response):
+    try:
+        uid = session.get("uid")
+        if (uid and resp.status_code == 200 and resp.mimetype == "text/html"
+                and not request.path.startswith("/admin")
+                and request.path not in ("/login", "/logout")):
+            resp.direct_passthrough = False  # статика (send_from_directory) идёт в passthrough
+            body = resp.get_data(as_text=True)
+            resp.set_data(watermark.embed(body, int(uid)))
+    except Exception as e:  # noqa: BLE001 — watermark не должен ломать отдачу
+        print("watermark apply failed:", e, flush=True)
+    return resp
 
 
 # --- пребилд + merge --------------------------------------------------------
@@ -316,6 +416,7 @@ def admin():
             f'onsubmit="return confirm(\'Удалить запись #{up["id"]}?\')">'
             f'<button>удалить</button></form></td></tr>')
     body = (f"<h1>Загрузки собесов ({len(ups)})</h1>"
+            "<p><a href='/admin/decode'>🔎 Декодер watermark</a> — узнать по утёкшему тексту, чей экземпляр.</p>"
             "<table border=1 cellpadding=6 style='border-collapse:collapse'>"
             "<tr><th>#</th><th>Собес</th><th>Сектор</th><th>Вопросов</th>"
             "<th>Загружен</th><th></th><th></th></tr>" + "".join(rows) + "</table>")
@@ -329,6 +430,32 @@ def admin_delete(upload_id):
     db.delete_upload(upload_id)
     _invalidate()
     return Response("", 303, {"Location": "/admin"})
+
+
+@app.route("/admin/decode", methods=["GET", "POST"])
+def admin_decode():
+    """Вставить утёкший текст/HTML → вычислить, чей это экземпляр (homoglyph-watermark)."""
+    result = ""
+    if request.method == "POST":
+        sample = request.form.get("sample", "")
+        uid = watermark.decode_user_id(sample)
+        if uid is None:
+            result = "<p style='color:#b00'>Сигнал не найден (возможно, текст перенабран или прогнан через LLM).</p>"
+        else:
+            nick = access.lookup_nick(uid) or "—"
+            result = (f"<p style='color:#060'><b>Найдено:</b> user_id <code>{uid}</code>, "
+                      f"ник <b>{_h(nick)}</b></p>")
+    return Response(
+        "<!doctype html><meta charset=utf-8><title>Декодер watermark</title>"
+        "<body style='font-family:sans-serif;max-width:800px;margin:30px auto'>"
+        "<h1>🔎 Декодер watermark</h1>"
+        "<p>Вставь утёкший текст или HTML-исходник страницы — покажу, чей это экземпляр.</p>"
+        f"{result}"
+        "<form method=post><textarea name=sample rows=14 style='width:100%' "
+        "placeholder='Вставь сюда утёкший текст…'></textarea><br>"
+        "<button style='margin-top:10px;padding:8px 16px'>Определить</button></form>"
+        "<p><a href='/admin'>← к загрузкам</a></p></body>",
+        mimetype="text/html")
 
 
 def _h(s):

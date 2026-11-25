@@ -175,10 +175,12 @@ color:#fff;margin-bottom:12px}}
 button{{width:100%;padding:12px;font-size:15px;background:#3b82f6;color:#fff;border:0;border-radius:9px;
 cursor:pointer}} button:hover{{background:#2f6fe0}}
 .err{{color:#f87171;font-size:13px;margin-bottom:10px}}
+a{{color:#60a5fa}}
 </style></head><body><form class=card method=post action=/login>
 <h1>🔑 Вход по персональному коду</h1>
-<p>Открой бота ML Clan → «Получить код доступа» и введи код сюда. Один раз — дальше
-браузер запомнит.</p>
+<p>Для доступа к ресурсу укажи код доступа — его можно получить, нажав кнопку
+«Получить код доступа» в <a href="https://t.me/c/2251744485/50" target=_blank
+rel=noopener>боте</a>. Юзернейм вводить не надо.</p>
 {err}<input name=code placeholder="КОД" autofocus autocomplete=off maxlength=32>
 <button type=submit>Войти</button></form></body></html>"""
 

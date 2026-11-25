@@ -33,9 +33,7 @@ _ALL_CYR = set("абвгдеёжзийклмнопрстуфхцчшщъыьэю
 _CYR_MARKERS = (_ALL_CYR - _CYR_TWINS)
 
 # Блоки, внутри которых НИЧЕГО не трогаем (сломается код/разметка).
-_SKIP_TAGS = ("script", "style", "code", "pre", "kbd", "samp")
-# Разбивка HTML на теги и текст; плюс ловим открытие/закрытие skip-блоков.
-_TOKEN_RE = re.compile(r"<[^>]+>|[^<]+")
+_SKIP_TAGS = frozenset(("script", "style", "code", "pre", "kbd", "samp"))
 _TAG_NAME_RE = re.compile(r"</?\s*([a-zA-Z0-9]+)")
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)  # последовательности букв (без цифр/_)
 
@@ -60,22 +58,36 @@ def _bits_to_user_id(bits: list[int]) -> int:
 
 
 def _iter_text_spans(html: str):
-    """Отдаёт (start, end) текстовых кусков HTML вне тегов и вне skip-блоков."""
-    skip_depth = 0
-    for m in _TOKEN_RE.finditer(html):
-        tok = m.group(0)
-        if tok.startswith("<"):
-            tm = _TAG_NAME_RE.match(tok)
-            if tm:
-                name = tm.group(1).lower()
-                if name in _SKIP_TAGS:
-                    if tok.startswith("</"):
-                        skip_depth = max(0, skip_depth - 1)
-                    elif not tok.endswith("/>"):
-                        skip_depth += 1
-            continue
-        if skip_depth == 0:
-            yield m.start(), m.end()
+    """Отдаёт (start, end) текстовых кусков HTML вне тегов и вне skip-блоков.
+
+    Войдя в skip-тег (script/style/code/pre…), прыгаем сразу к его закрытию — внутренние
+    '<...>' (JS-строки, подсветка кода) НЕ считаем тегами, иначе разъедется баланс."""
+    lower = html.lower()
+    n = len(html)
+    i = 0
+    while i < n:
+        ch = html[i]
+        if ch == "<":
+            j = html.find(">", i)
+            if j == -1:
+                break
+            tag = html[i:j + 1]
+            tm = _TAG_NAME_RE.match(tag)
+            name = tm.group(1).lower() if tm else ""
+            if name in _SKIP_TAGS and not tag.startswith("</") and not tag.endswith("/>"):
+                close = lower.find("</" + name, j + 1)
+                if close == -1:
+                    break
+                end = html.find(">", close)
+                i = (end + 1) if end != -1 else n
+            else:
+                i = j + 1
+        else:
+            j = html.find("<", i)
+            if j == -1:
+                j = n
+            yield i, j
+            i = j
 
 
 def embed(html: str, user_id: int) -> str:

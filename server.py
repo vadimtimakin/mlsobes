@@ -31,6 +31,7 @@ from flask import (
 import access
 import db
 import ingest
+import navswap
 import watermark
 from build import make_md, page_html
 
@@ -287,7 +288,12 @@ def _upload_title(up) -> str:
 # --- дин. навигатор/поиск (перекрывают статику) -----------------------------
 @app.route("/assets/navigator-data.json")
 def nav_data():
-    return Response(merged_nav(), mimetype="application/json")
+    raw = merged_nav()
+    uid = session.get("uid") if _code_login_enabled() else None
+    if uid:
+        nav = navswap.permute(json.loads(raw), int(uid))
+        return Response(json.dumps(nav, ensure_ascii=False), mimetype="application/json")
+    return Response(raw, mimetype="application/json")
 
 
 @app.route("/assets/search-index.json")
@@ -438,12 +444,23 @@ def admin_decode():
     result = ""
     if request.method == "POST":
         sample = request.form.get("sample", "")
-        uid = watermark.decode_user_id(sample)
+        uid, how = None, ""
+        # Если вставили navigator-data.json — декодим перестановкой вопросов.
+        try:
+            parsed = json.loads(sample)
+            if isinstance(parsed, dict) and parsed.get("questions"):
+                uid = navswap.decode(parsed, json.loads(merged_nav()))
+                how = " (по перестановке вопросов навигатора)"
+        except (ValueError, TypeError):
+            pass
+        if uid is None:  # иначе — homoglyph по тексту/HTML
+            uid = watermark.decode_user_id(sample)
+            how = " (по homoglyph-метке текста)" if uid is not None else ""
         if uid is None:
             result = "<p style='color:#b00'>Сигнал не найден (возможно, текст перенабран или прогнан через LLM).</p>"
         else:
             nick = access.lookup_nick(uid) or "—"
-            result = (f"<p style='color:#060'><b>Найдено:</b> user_id <code>{uid}</code>, "
+            result = (f"<p style='color:#060'><b>Найдено{how}:</b> user_id <code>{uid}</code>, "
                       f"ник <b>{_h(nick)}</b></p>")
     return Response(
         "<!doctype html><meta charset=utf-8><title>Декодер watermark</title>"
